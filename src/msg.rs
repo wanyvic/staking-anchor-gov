@@ -1,27 +1,74 @@
+use cosmwasm_std::{Decimal, Uint128};
+use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub const WITHDRAW_REPLY_ID: u64 = 1;
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplySendData {
+    pub recipient: String,
+    pub amount: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct InstantiateMsg {
-    pub count: i32,
+    pub feerate: Decimal,
+    pub anchor_gov: String,
+    pub anchor_token: String,
+    pub dev: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    Increment {},
-    Reset { count: i32 },
+    Receive(Cw20ReceiveMsg),
+    TransferOwnerShip { new_owner: String },
+    AcceptOwner {},
+    UpdateDev { new_dev: String },
+    UpdateFeeRate { new_feerate: Decimal },
+    WithdrawToken { amount: Option<Uint128> },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    // GetCount returns the current count as a json-encoded number
-    GetCount {},
+    Config {},
+    State {},
+    UserState { user: String },
 }
 
-// We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct CountResponse {
-    pub count: i32,
+#[serde(rename_all = "snake_case")]
+pub struct ConfigResponse {
+    pub owner: String,
+    pub pendding_owner: String,
+    pub dev: String,
+    pub anchor_token: String,
+    pub anchor_gov: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct StateResponse {
+    pub feerate: Decimal,
+    pub locked_balance: Uint128,
+    pub available_balance: Uint128,
+    pub total_shares: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct UserStateResponse {
+    pub locked_balance: Uint128,
+    pub available_balance: Uint128,
+    pub shares: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Cw20HookMsg {
+    StakingTokens {},
 }

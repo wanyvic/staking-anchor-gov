@@ -1,106 +1,76 @@
-# CosmWasm Starter Pack
+# 概述
+设计一个池子用来收集用户的anc，收完手续费后再次投入anc的gov合约中。
+# 需求分析
+- 用户可以投入、取出、查看自己存入的anc
+- 管理员可以设置费率
 
-This is a template to build smart contracts in Rust to run inside a
-[Cosmos SDK](https://github.com/cosmos/cosmos-sdk) module on all chains that enable it.
-To understand the framework better, please read the overview in the
-[cosmwasm repo](https://github.com/CosmWasm/cosmwasm/blob/master/README.md),
-and dig into the [cosmwasm docs](https://www.cosmwasm.com).
-This assumes you understand the theory and just want to get coding.
-
-## Creating a new repo from template
-
-Assuming you have a recent version of rust and cargo (v1.51.0+) installed
-(via [rustup](https://rustup.rs/)),
-then the following should get you a new repo to start a contract:
-
-
-Install [cargo-generate](https://github.com/ashleygwilliams/cargo-generate) and cargo-run-script.
-Unless you did that before, run this line now:
-
-```sh
-cargo install cargo-generate cargo-run-script --features vendored-openssl 
-```
-
-Now, use it to create your new contract.
-Go to the folder in which you want to place it and run:
+## 状态数据：
+### Config:
+| 状态变量        | 类型                    | 备注            |
+| --------------- | ----------------------- | --------------- |
+| `owner`         | `CanonicalAddr`         | 管理员          |
+| `pending_owner` | `Option<CanonicalAddr>` | 预备的管理员    |
+| `dev`           | `CanonicalAddr`         | 手续费接收地址  |
+| `anc_token`     | `CanonicalAddr`         | token地址       |
+| `anc_gov`       | `CanonicalAddr`         | gov staking地址 |
 
 
-**Latest: 0.16**
+| 状态变量       | 类型                 | 备注                 |
+| -------------- | -------------------- | -------------------- |
+| `config`       | `Config`             | 合约配置             |
+| `fee_rate`     | `Decimal`            | 管理员设置的手续费率 |
+| `total_shares` | `Uint128`            | 总计的份额           |
+| `user_states`  | `map<addr, Uint128>` | 用户份额的map        |
 
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --name PROJECT_NAME
-````
+### 函数
+## 静态函数
 
-**Older Version**
+| 函数名      | 参数     | 返回值              | 说明                                  |
+| ----------- | -------- | ------------------- | ------------------------------------- |
+| `Config`    |          | `ConfigResponse`    | 返回`ConfigResponse`                  |
+| `UserState` | `String` | `UserStateResponse` | 根据用户`Addr`返回`UserStateResponse` |
+| `State`     |          | `StateResponse`     | 返回`StateResponse`                   |
 
-Pass version as branch flag:
+## 动态调用
 
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch <version> --name PROJECT_NAME
-````
+| 函数名称            | 参数             | 调用方      | 备注                                                                     |
+| ------------------- | ---------------- | ----------- | ------------------------------------------------------------------------ |
+| `UpdateDev`         | `String`         | `owner`     | 更新`dev`的地址                                                          |
+| `TransferOwnership` | `String`         | `owner`     | 移交`owner`权限                                                          |
+| `AcceptedOwner`     |                  | `new owner` | 新的`owner`接受权限                                                      |
+| `UpdateFeeRate`     | `Decimal`        | `owner`     | 更新费率                                                                 |
+| `Receive`           | `Cw20ReceiveMsg` | `token`     | 处理anc的`Cw20ReceiveMsg`消息。存入token。                               |
+| `WithdrawToken`     | `Uint128`        | `user`      | 用户取出anc，如果通过amount计算出的share值大于用户的值，则强制取出最大值 |
 
-Example:
+## 测试用例
+### 静态调用
+| 测试函数名         | 备注                              |
+| ------------------ | --------------------------------- |
+| `query_config`     | 检查`ConfigResponse`数据一致性    |
+| `query_user_state` | 检查`UserStateResponse`数据一致性 |
+| `query_state`      | 检查`StateResponse`数据一致性     |
+### 动态调用
 
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch 0.14 --name PROJECT_NAME
-```
-
-You will now have a new folder called `PROJECT_NAME` (I hope you changed that to something else)
-containing a simple working contract and build system that you can customize.
-
-## Create a Repo
-
-After generating, you have a initialized local git repo, but no commits, and no remote.
-Go to a server (eg. github) and create a new upstream repo (called `YOUR-GIT-URL` below).
-Then run the following:
-
-```sh
-# this is needed to create a valid Cargo.lock file (see below)
-cargo check
-git branch -M main
-git add .
-git commit -m 'Initial Commit'
-git remote add origin YOUR-GIT-URL
-git push -u origin master
-```
-
-## CI Support
-
-We have template configurations for both [GitHub Actions](.github/workflows/Basic.yml)
-and [Circle CI](.circleci/config.yml) in the generated project, so you can
-get up and running with CI right away.
-
-One note is that the CI runs all `cargo` commands
-with `--locked` to ensure it uses the exact same versions as you have locally. This also means
-you must have an up-to-date `Cargo.lock` file, which is not auto-generated.
-The first time you set up the project (or after adding any dep), you should ensure the
-`Cargo.lock` file is updated, so the CI will test properly. This can be done simply by
-running `cargo check` or `cargo unit-test`.
-
-## Using your project
-
-Once you have your custom repo, you should check out [Developing](./Developing.md) to explain
-more on how to run tests and develop code. Or go through the
-[online tutorial](https://docs.cosmwasm.com/) to get a better feel
-of how to develop.
-
-[Publishing](./Publishing.md) contains useful information on how to publish your contract
-to the world, once you are ready to deploy it on a running blockchain. And
-[Importing](./Importing.md) contains information about pulling in other contracts or crates
-that have been published.
-
-Please replace this README file with information about your specific project. You can keep
-the `Developing.md` and `Publishing.md` files as useful referenced, but please set some
-proper description in the README.
-
-## Gitpod integration
-
-[Gitpod](https://www.gitpod.io/) container-based development platform will be enabled on your project by default.
-
-Workspace contains:
- - **rust**: for builds
- - [wasmd](https://github.com/CosmWasm/wasmd): for local node setup and client
- - **jq**: shell JSON manipulation tool
-
-Follow [Gitpod Getting Started](https://www.gitpod.io/docs/getting-started) and launch your workspace.
-
+| 测试函数名                                           | 备注                                                |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| `proper_initialization`                              | 检查初始化赋值是否正确                              |
+| `fails_update_dev_with_unauthorized`                 | 检查调用者是否有权限，报`Unauthorized`              |
+| `fails_update_dev_without_validated_address`         | 检查输入不合法，报`GenericErr`                      |
+| `proper_update_dev`                                  | 检查`config.dev`是否正确                            |
+| `fails_transfer_ownership_with_unauthorized`         | 检查调用者是否有权限，报`Unauthorized`              |
+| `fails_transfer_ownership_without_validated_address` | 检查输入不为空，但地址不合法。报`GenericErr`        |
+| `proper_transfer_ownership`                          | 检查`config.pendding_owner`是否正确                 |
+| `proper_transfer_ownership_with_none`                | 检查`config.pendding_owner`是否为`None`             |
+| `fails_accepted_owner_with_unauthorized`             | 检查调用者是否有权限，报`Unauthorized`              |
+| `proper_accepted_owner`                              | 检查`config.pendding_owner`和`config.owner`是否正确 |
+| `fails_update_feerate_with_unauthorized`             | 检查调用者是否有权限，报`Unauthorized`              |
+| `fails_update_feerate_out_of_limits`                 | 检查费率范围，报`FeeRateOutOfLimits`                |
+| `proper_update_feerate`                              | 检查`feerate`是否正确                               |
+| `fails_receive_with_unauthorized`                    | 拒绝非`anc_token`的调用                             |
+| `fails_receive_with_zero_amount`                     | 拒绝零转账，报`InsufficientFunds`                   |
+| `proper_receive_with_dev_fee`                        | 检查存在devfee的存款情况                            |
+| `proper_receive_without_dev_fee_double`              | 检查存在feerate为0时的双次存款情况                  |
+| `fails_withdraw_token_out_of_amount`                 | 拒绝超过自身上限取款，报`InsufficientFunds`         |
+| `fails_withdraw_token_without_deposit`               | 拒绝没有存款的取款，报`NothingStaked`               |
+| `proper_withdraw_token`                              | 检查取款后`user_state`的情况                        |
+| `proper_withdraw_token_all`                          | 检查取出所有token后`user_state`的情况               |
