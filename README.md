@@ -3,6 +3,9 @@
 # 需求分析
 - 用户可以投入、取出、查看自己存入的anc
 - 管理员可以设置费率
+
+
+[![Basic](https://github.com/wanyvic/staking-anchor-gov/actions/workflows/Basic.yml/badge.svg)](https://github.com/wanyvic/staking-anchor-gov/actions/workflows/Basic.yml)
 # architecture
 ## State variables
 ### Config
@@ -100,13 +103,13 @@ rust-optimizer       # if your project contains only 1 contract
 cargo test
 ```
 ## integration tests
-### install LocalTerra
+### 1. install LocalTerra
 ```bash
 git clone --depth 1 https://www.github.com/terra-money/LocalTerra
 cd LocalTerra
 docker-compose up
 ```
-### run integration tests
+### 2. run integration tests
 ```bash
 # firstly run rust-optimizer to compile optimizely wasm
 rust-optimizer
