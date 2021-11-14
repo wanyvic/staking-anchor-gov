@@ -236,7 +236,7 @@ pub fn withdraw_token(
             WITHDRAW_REPLY_ID,
         )))
     } else {
-        return Err(ContractError::NothingStaked {});
+        Err(ContractError::NothingStaked {})
     }
 }
 /// when receive token, we will record it and re-invest to gov.
@@ -289,7 +289,7 @@ fn stake_tokens(
     let mut dev_increase_share = Uint128::zero();
     let dev_amount = amount * feerate;
     if !dev_amount.is_zero() {
-        amount = amount - dev_amount;
+        amount -= dev_amount;
         dev_increase_share = deposit(dev_amount, deposited_balance, total_shares);
         let dev_key = &config.dev.as_slice();
         let mut dev_shares = user_states_read(deps.storage)
@@ -346,9 +346,9 @@ fn send_tokens(
         .add_messages(vec![CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr: contract_human,
             msg: to_binary(&Cw20ExecuteMsg::Send {
-                contract: recipient_human.clone(),
-                amount: amount,
-                msg: msg,
+                contract: recipient_human,
+                amount,
+                msg,
             })?,
             funds: vec![],
         })])
@@ -369,7 +369,7 @@ fn transfer_tokens(
             contract_addr: contract_human,
             msg: to_binary(&Cw20ExecuteMsg::Transfer {
                 recipient: recipient_human.clone(),
-                amount: amount,
+                amount,
             })?,
             funds: vec![],
         })])
@@ -412,7 +412,7 @@ pub fn query_balance_from_gov(
         available_balance -= x.balance;
         locked_balance += x.balance;
     }
-    return Ok((available_balance, locked_balance, response.share));
+    Ok((available_balance, locked_balance, response.share))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -451,10 +451,10 @@ fn query_state(deps: Deps, env: Env) -> Result<StateResponse, ContractError> {
     )?;
 
     Ok(StateResponse {
-        total_shares: total_shares,
-        feerate: feerate,
-        locked_balance: locked_balance,
-        available_balance: available_balance,
+        total_shares,
+        feerate,
+        locked_balance,
+        available_balance,
     })
 }
 

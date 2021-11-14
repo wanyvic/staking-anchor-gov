@@ -1004,9 +1004,9 @@ fn query_user_state() {
         &[(
             &MOCK_CONTRACT_ADDR.to_string(),
             &StakerResponse {
-                balance: balance,
-                share: share,
-                locked_balance: locked_balance,
+                balance,
+                share,
+                locked_balance,
             },
         )],
     )]);
@@ -1083,9 +1083,9 @@ fn query_state() {
         &[(
             &MOCK_CONTRACT_ADDR.to_string(),
             &StakerResponse {
-                balance: balance,
-                share: share,
-                locked_balance: locked_balance,
+                balance,
+                share,
+                locked_balance,
             },
         )],
     )]);
