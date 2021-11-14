@@ -7,13 +7,6 @@ pub const WITHDRAW_REPLY_ID: u64 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub struct ReplySendData {
-    pub recipient: String,
-    pub amount: Uint128,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
 pub struct InstantiateMsg {
     pub feerate: Decimal,
     pub anchor_gov: String,

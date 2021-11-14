@@ -1,20 +1,20 @@
-use crate::contract::{execute, instantiate, query};
+use crate::contract::{execute, instantiate, query, reply};
 use crate::error::ContractError;
 use crate::msg::{
-    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, ReplySendData,
-    StateResponse, UserStateResponse, WITHDRAW_REPLY_ID,
+    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+    UserStateResponse, WITHDRAW_REPLY_ID,
 };
 use crate::state::{
-    config_read, feerate_read, total_shares_read, total_shares_store, user_states_read,
-    user_states_store, Config,
+    config_read, feerate_read, temp_send_store, total_shares_read, total_shares_store,
+    user_states_read, user_states_store, Config, TempSendData,
 };
 
 use crate::mock_querier::mock_dependencies;
 use anchor_token::gov::Cw20HookMsg as GovCw20HookMsg;
 use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
 use cosmwasm_std::{
-    from_binary, to_binary, Api, CosmosMsg, Decimal, DepsMut, Response, StdError, SubMsg, Uint128,
-    WasmMsg,
+    from_binary, to_binary, Api, ContractResult, CosmosMsg, Decimal, DepsMut, Reply, Response,
+    StdError, SubMsg, SubMsgExecutionResponse, Uint128, WasmMsg,
 };
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
@@ -444,6 +444,65 @@ pub fn proper_receive_with_dev_fee() {
 }
 
 #[test]
+pub fn proper_receive_with_dev_fee_same_account() {
+    let mut deps = mock_dependencies(&[]);
+    mock_instantiate(deps.as_mut());
+    let transfer_amount_alice = Uint128::from(1_000_000u128);
+    let msg = ExecuteMsg::Receive(Cw20ReceiveMsg {
+        sender: TEST_DEV.to_string(),
+        amount: transfer_amount_alice,
+        msg: to_binary(&Cw20HookMsg::StakingTokens {}).unwrap(),
+    });
+    let info = mock_info(&(TEST_ANCHOR_TOKEN.to_string()), &[]);
+
+    // deposit MOCK_CONTRACT_ADDR some tokens.
+    let transfer_contract_amount1 = Uint128::from(2_000_000u128);
+    deps.querier.with_token_balances(&[(
+        &TEST_ANCHOR_TOKEN.to_string(),
+        &[(&MOCK_CONTRACT_ADDR.to_string(), &transfer_contract_amount1)],
+    )]);
+
+    deps.querier.with_gov_stakers(&[(
+        &TEST_ANCHOR_GOV.to_string(),
+        &[(
+            &MOCK_CONTRACT_ADDR.to_string(),
+            &StakerResponse {
+                balance: Uint128::zero(),
+                share: Uint128::zero(),
+                locked_balance: vec![],
+            },
+        )],
+    )]);
+
+    let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+    let msg = res.messages.get(0).expect("no message");
+    // assert for Send to TEST_ANCHOR_GOV SubMsg
+    assert_eq!(
+        msg,
+        &SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: TEST_ANCHOR_TOKEN.to_string(),
+            msg: to_binary(&Cw20ExecuteMsg::Send {
+                contract: TEST_ANCHOR_GOV.to_string(),
+                amount: transfer_contract_amount1,
+                msg: to_binary(&GovCw20HookMsg::StakeVotingTokens {}).unwrap(),
+            })
+            .unwrap(),
+            funds: vec![],
+        }))
+    );
+
+    // user check
+    let key = deps.api.addr_canonicalize(TEST_DEV).unwrap();
+    let user_shares = user_states_read(deps.as_ref().storage)
+        .may_load(&key.as_slice())
+        .unwrap_or_default()
+        .unwrap_or_default();
+
+    let total_shares = total_shares_read(deps.as_ref().storage).load().unwrap();
+    assert_eq!(total_shares, user_shares);
+}
+
+#[test]
 fn proper_receive_without_dev_fee_double() {
     let mut deps = mock_dependencies(&[]);
 
@@ -464,6 +523,11 @@ fn proper_receive_without_dev_fee_double() {
         amount: transfer_amount_alice,
         msg: to_binary(&Cw20HookMsg::StakingTokens {}).unwrap(),
     });
+
+    // let a: Binary = to_binary(&Cw20HookMsg::StakingTokens {}).unwrap();
+    // let b = String::from_utf8(to_vec(&a).unwrap()).unwrap();
+    // let c = String::from_utf8(to_vec(&Cw20HookMsg::StakingTokens {}).unwrap()).unwrap();
+    // println!("{},{},{}", a.to_base64(), b, c);
     let info = mock_info(&(TEST_ANCHOR_TOKEN.to_string()), &[]);
 
     // deposit MOCK_CONTRACT_ADDR some tokens.
@@ -703,25 +767,17 @@ fn proper_withdraw_token() {
     // assert for Send to TEST_ANCHOR_GOV SubMsg
     assert_eq!(
         res,
-        Response::new()
-            .add_submessage(SubMsg::reply_always(
-                CosmosMsg::Wasm(WasmMsg::Execute {
-                    contract_addr: TEST_ANCHOR_GOV.to_string(),
-                    msg: to_binary(&GovExcuteMsg::WithdrawVotingTokens {
-                        amount: Some(withdraw_amount)
-                    })
-                    .unwrap(),
-                    funds: vec![],
-                }),
-                WITHDRAW_REPLY_ID
-            ))
-            .set_data(
-                to_binary(&ReplySendData {
-                    recipient: info.sender.to_string(),
-                    amount: withdraw_amount,
+        Response::new().add_submessage(SubMsg::reply_on_success(
+            CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: TEST_ANCHOR_GOV.to_string(),
+                msg: to_binary(&GovExcuteMsg::WithdrawVotingTokens {
+                    amount: Some(withdraw_amount)
                 })
-                .unwrap()
-            )
+                .unwrap(),
+                funds: vec![],
+            }),
+            WITHDRAW_REPLY_ID
+        ))
     )
 }
 
@@ -772,7 +828,7 @@ fn proper_withdraw_token_all() {
     // assert for Send to TEST_ANCHOR_GOV SubMsg
     assert_eq!(
         msg,
-        &SubMsg::reply_always(
+        &SubMsg::reply_on_success(
             CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: TEST_ANCHOR_GOV.to_string(),
                 msg: to_binary(&GovExcuteMsg::WithdrawVotingTokens {
@@ -784,6 +840,59 @@ fn proper_withdraw_token_all() {
             WITHDRAW_REPLY_ID
         )
     );
+}
+
+#[test]
+fn fails_reply_temp_send_data_not_found() {
+    let mut deps = mock_dependencies(&[]);
+    mock_instantiate(deps.as_mut());
+    let reply_msg = Reply {
+        id: WITHDRAW_REPLY_ID,
+        result: ContractResult::Ok(SubMsgExecutionResponse {
+            events: vec![],
+            data: None,
+        }),
+    };
+    let res = reply(deps.as_mut(), mock_env(), reply_msg);
+    match res {
+        Err(ContractError::Std(StdError::NotFound { kind, .. })) => {
+            assert_eq!(kind, "staking_anchor_gov::state::TempSendData")
+        }
+        _ => panic!("Must return error"),
+    }
+}
+
+#[test]
+fn proper_reply() {
+    let mut deps = mock_dependencies(&[]);
+    mock_instantiate(deps.as_mut());
+    temp_send_store(&mut deps.storage)
+        .save(&TempSendData {
+            recipient: TEST_CREATOR.to_string(),
+            amount: Uint128::from(100u128),
+        })
+        .unwrap();
+    let reply_msg = Reply {
+        id: WITHDRAW_REPLY_ID,
+        result: ContractResult::Ok(SubMsgExecutionResponse {
+            events: vec![],
+            data: None,
+        }),
+    };
+    let res = reply(deps.as_mut(), mock_env(), reply_msg).unwrap();
+    let msg = res.messages.get(0).expect("no message");
+    assert_eq!(
+        msg,
+        &SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: TEST_ANCHOR_TOKEN.to_string(),
+            msg: to_binary(&Cw20ExecuteMsg::Transfer {
+                recipient: TEST_CREATOR.to_string(),
+                amount: Uint128::from(100u128),
+            })
+            .unwrap(),
+            funds: vec![],
+        }))
+    )
 }
 
 // query

@@ -10,6 +10,7 @@ static KEY_CONFIG: &[u8] = b"config";
 static KEY_FEERATE: &[u8] = b"feerate";
 static KEY_TOTAL_SHARES: &[u8] = b"total_shares";
 static KEY_USER_STATES: &[u8] = b"user_states";
+static KEY_TEMP_SEND: &[u8] = b"temp_send";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
@@ -18,6 +19,12 @@ pub struct Config {
     pub dev: CanonicalAddr,
     pub anchor_token: CanonicalAddr,
     pub anchor_gov: CanonicalAddr,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct TempSendData {
+    pub recipient: String,
+    pub amount: Uint128,
 }
 
 pub fn config_store(storage: &mut dyn Storage) -> Singleton<Config> {
@@ -49,4 +56,12 @@ pub fn user_states_read(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
 
 pub fn user_states_store(storage: &mut dyn Storage) -> Bucket<Uint128> {
     bucket(storage, KEY_USER_STATES)
+}
+
+pub fn temp_send_store(storage: &mut dyn Storage) -> Singleton<TempSendData> {
+    singleton(storage, KEY_TEMP_SEND)
+}
+
+pub fn temp_send_read(storage: &dyn Storage) -> ReadonlySingleton<TempSendData> {
+    singleton_read(storage, KEY_TEMP_SEND)
 }

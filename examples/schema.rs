@@ -4,7 +4,7 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use staking_anchor_gov::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse, UserStateResponse,
 };
 
 fn main() {
@@ -18,4 +18,5 @@ fn main() {
     export_schema(&schema_for!(QueryMsg), &out_dir);
     export_schema(&schema_for!(ConfigResponse), &out_dir);
     export_schema(&schema_for!(StateResponse), &out_dir);
+    export_schema(&schema_for!(UserStateResponse), &out_dir);
 }

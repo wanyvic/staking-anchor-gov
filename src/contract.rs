@@ -1,19 +1,20 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Addr, Attribute, Binary, CanonicalAddr, ContractResult,
-    CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, QuerierWrapper, QueryRequest, Reply,
-    Response, StdError, StdResult, SubMsg, Uint128, WasmMsg, WasmQuery,
+    attr, from_binary, to_binary, Addr, Attribute, Binary, CanonicalAddr, CosmosMsg, Decimal, Deps,
+    DepsMut, Env, MessageInfo, QuerierWrapper, QueryRequest, Reply, Response, StdError, StdResult,
+    SubMsg, Uint128, WasmMsg, WasmQuery,
 };
 
 use crate::error::ContractError;
 use crate::msg::{
-    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, ReplySendData,
-    StateResponse, UserStateResponse, WITHDRAW_REPLY_ID,
+    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StateResponse,
+    UserStateResponse, WITHDRAW_REPLY_ID,
 };
 use crate::state::{
-    config_read, config_store, feerate_read, feerate_store, total_shares_read, total_shares_store,
-    user_states_read, user_states_store, Config,
+    config_read, config_store, feerate_read, feerate_store, temp_send_read, temp_send_store,
+    total_shares_read, total_shares_store, user_states_read, user_states_store, Config,
+    TempSendData,
 };
 
 use anchor_token::gov::{
@@ -21,9 +22,7 @@ use anchor_token::gov::{
     StakerResponse,
 };
 use cw20::{BalanceResponse as Cw20BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg};
-// -> wasmd_18 tx wasm store target/wasm32-unknown-unknown/release/staking_anchor_gov.wasm --from main --node tcp://localhost:26657 --chain-id localnet --gas-prices 0.01ucosm --gas 1289204 --gas-adjustment 1.3 --keyring-backend test --home ~/.wasmd_test_keys
-// -> wasmd_18 tx wasm instantiate 1 '{"fee_rate": "0.02","anchor_gov":"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c", "anchor_token": "wasm166hsz0p746sr99qxdx66xglck85cqgjld2dxyl"}' --from main --label "test" --node tcp://localhost:26657 --chain-id localnet --gas-prices 0.01ucosm --gas auto --gas-adjustment 1.3 --keyring-backend test --home ~/.wasmd_test_keys
-// <- {"height":"444","txhash":"758208312EF43C93E57E4EC56C99C06CD9CB7BA0877492D97E32C7FDD5F697DF","data":"0A3C0A0B696E7374616E7469617465122D0A2B7761736D3134686A32746176713866706573647778786375343472747933686839307668756A6771776733","raw_log":"[{\"events\":[{\"type\":\"instantiate\",\"attributes\":[{\"key\":\"_contract_address\",\"value\":\"wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujgqwg3\"},{\"key\":\"code_id\",\"value\":\"1\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"instantiate\"},{\"key\":\"module\",\"value\":\"wasm\"},{\"key\":\"sender\",\"value\":\"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c\"}]},{\"type\":\"wasm\",\"attributes\":[{\"key\":\"_contract_address\",\"value\":\"wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujgqwg3\"},{\"key\":\"method\",\"value\":\"instantiate\"},{\"key\":\"owner\",\"value\":\"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c\"},{\"key\":\"fee_rate\",\"value\":\"0.02\"},{\"key\":\"anchor_token\",\"value\":\"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c\"},{\"key\":\"anchor_gov\",\"value\":\"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c\"}]}]}]","logs":[{"events":[{"type":"instantiate","attributes":[{"key":"_contract_address","value":"wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujgqwg3"},{"key":"code_id","value":"1"}]},{"type":"message","attributes":[{"key":"action","value":"instantiate"},{"key":"module","value":"wasm"},{"key":"sender","value":"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c"}]},{"type":"wasm","attributes":[{"key":"_contract_address","value":"wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujgqwg3"},{"key":"method","value":"instantiate"},{"key":"owner","value":"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c"},{"key":"fee_rate","value":"0.02"},{"key":"anchor_token","value":"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c"},{"key":"anchor_gov","value":"wasm1ytw7vjnt7qeduxa2s7u98uqau4p9f096javn6c"}]}]}],"gas_wanted":"149730","gas_used":"124816"}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -69,7 +68,6 @@ pub fn execute(
         ExecuteMsg::AcceptOwner {} => accept_owner(deps, info),
         ExecuteMsg::UpdateDev { new_dev } => update_dev(deps, info, new_dev),
         ExecuteMsg::UpdateFeeRate { new_feerate } => update_feerate(deps, info, new_feerate),
-        // TODO:
         ExecuteMsg::WithdrawToken { amount } => withdraw_token(deps, _env, info, amount),
     }
 }
@@ -181,7 +179,7 @@ fn feerate_limits(feerate: Decimal) -> Result<Decimal, ContractError> {
     Ok(feerate)
 }
 
-/// TODO: withdraw token from gov to user.
+/// withdraw token from gov to user.
 pub fn withdraw_token(
     deps: DepsMut,
     env: Env,
@@ -221,22 +219,22 @@ pub fn withdraw_token(
 
         user_states_store(deps.storage).save(&key, &user_shares)?;
         total_shares_store(deps.storage).save(&total_shares)?;
+        // waitting for send after receiving
+        temp_send_store(deps.storage).save(&TempSendData {
+            recipient: info.sender.to_string(),
+            amount: withdraw_amount,
+        })?;
 
-        Ok(Response::new()
-            .add_submessage(SubMsg::reply_on_success(
-                CosmosMsg::Wasm(WasmMsg::Execute {
-                    contract_addr: deps.api.addr_humanize(&config.anchor_gov)?.to_string(),
-                    msg: to_binary(&GovExcuteMsg::WithdrawVotingTokens {
-                        amount: Some(withdraw_amount),
-                    })?,
-                    funds: vec![],
-                }),
-                WITHDRAW_REPLY_ID,
-            ))
-            .set_data(to_binary(&ReplySendData {
-                recipient: info.sender.to_string(),
-                amount: withdraw_amount,
-            })?))
+        Ok(Response::new().add_submessage(SubMsg::reply_on_success(
+            CosmosMsg::Wasm(WasmMsg::Execute {
+                contract_addr: deps.api.addr_humanize(&config.anchor_gov)?.to_string(),
+                msg: to_binary(&GovExcuteMsg::WithdrawVotingTokens {
+                    amount: Some(withdraw_amount),
+                })?,
+                funds: vec![],
+            }),
+            WITHDRAW_REPLY_ID,
+        )))
     } else {
         return Err(ContractError::NothingStaked {});
     }
@@ -285,10 +283,6 @@ fn stake_tokens(
     let sender_address_raw = deps.api.addr_canonicalize(sender.as_str())?;
     let key = &sender_address_raw.as_slice();
 
-    let mut user_shares = user_states_read(deps.storage)
-        .may_load(key)?
-        .unwrap_or_default();
-
     let mut total_shares = total_shares_read(deps.storage).load()?;
 
     let feerate = feerate_read(deps.storage).load()?;
@@ -304,6 +298,9 @@ fn stake_tokens(
         dev_shares += dev_increase_share;
         user_states_store(deps.storage).save(dev_key, &dev_shares)?;
     }
+    let mut user_shares = user_states_read(deps.storage)
+        .may_load(key)?
+        .unwrap_or_default();
     let user_increase_share = deposit(amount, deposited_balance, total_shares);
     user_shares += user_increase_share;
     total_shares += dev_increase_share + user_increase_share;
@@ -496,22 +493,20 @@ fn query_user_state(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
     if msg.id == WITHDRAW_REPLY_ID {
-        let res = msg.result.unwrap();
-        match from_binary(&res.data.unwrap()) {
-            Ok(ReplySendData { recipient, amount }) => {
-                let config: Config = config_read(deps.storage).load()?;
-                let recipient_addr = deps.api.addr_canonicalize(&recipient.as_str())?;
-                return transfer_tokens(
-                    deps,
-                    &config.anchor_token,
-                    &recipient_addr,
-                    amount,
-                    "transfer",
-                );
-            }
-            _ => {}
-        }
+        let config: Config = config_read(deps.storage).load()?;
+        let temp_send_data = temp_send_read(deps.storage).load()?;
+        let recipient = deps
+            .api
+            .addr_canonicalize(temp_send_data.recipient.as_str())?;
+        return transfer_tokens(
+            deps,
+            &config.anchor_token,
+            &recipient,
+            temp_send_data.amount,
+            "transfer",
+        );
     }
+
     Err(ContractError::Std(StdError::generic_err(
         "not supported reply",
     )))
