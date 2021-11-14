@@ -38,7 +38,7 @@ jobs:
           RUSTFLAGS: "-C link-arg=-s"
 
   codecov:
-    name: Rust project
+    name: Unit Test Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
